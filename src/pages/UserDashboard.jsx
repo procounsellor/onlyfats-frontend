@@ -3,7 +3,7 @@ import {
   Home, Bell, MessageCircle, Bookmark, CreditCard, User, Search,
   Lock, Heart, Eye, EyeOff, Menu, X, ImagePlus, Wallet, TrendingUp, Settings,
   LogOut, Send, Play, Grid3X3, Radio, MessageSquare, ChevronRight,
-  Check, Compass, PlusCircle, MoreHorizontal, Trash2, Edit3,
+  Check, Compass, PlusCircle, MoreHorizontal, Trash2, Edit3, Zap, Star, Crown,
 } from "lucide-react";
 import { api } from "../api/client";
 import { getFeed } from "../api/posts";
@@ -52,7 +52,7 @@ function Avatar({ src, name, size = "h-10 w-10", textSize = "text-sm", className
 }
 
 // ─── Media Carousel ───────────────────────────────────────────────────────────
-function MediaCarousel({ items, locked = false, aspectClass = "aspect-[4/5]", onSubscribe, creatorId, creatorName }) {
+function MediaCarousel({ items, locked = false, onSubscribe, creatorId, creatorName }) {
   const [idx, setIdx] = useState(0);
   const [mediaBroken, setMediaBroken] = useState(false);
   const total = items?.length || 0;
@@ -61,7 +61,7 @@ function MediaCarousel({ items, locked = false, aspectClass = "aspect-[4/5]", on
   useEffect(() => { setMediaBroken(false); }, [idx, items]);
 
   if (!total) return (
-    <div className={`relative bg-zinc-950 flex items-center justify-center ${aspectClass}`}>
+    <div className="relative bg-zinc-950 flex items-center justify-center min-h-[200px]">
       <ImagePlus className="h-16 w-16 text-zinc-700" />
     </div>
   );
@@ -74,14 +74,15 @@ function MediaCarousel({ items, locked = false, aspectClass = "aspect-[4/5]", on
   function next(e) { e.stopPropagation(); setIdx((i) => (i + 1) % total); }
 
   return (
-    <div className={`relative bg-zinc-950 overflow-hidden select-none ${aspectClass}`}>
-      {/* Media */}
+    <div className="relative w-full bg-zinc-950 overflow-hidden select-none">
+      {/* Media — natural aspect ratio, no cropping, no black bars */}
       {url && !mediaBroken ? (
         isVideo ? (
           <video
             src={url}
-            className="absolute inset-0 h-full w-full object-contain"
+            className="w-full block"
             controls
+            controlsList="nodownload"
             autoPlay
             muted
             loop
@@ -89,10 +90,10 @@ function MediaCarousel({ items, locked = false, aspectClass = "aspect-[4/5]", on
             onError={() => setMediaBroken(true)}
           />
         ) : (
-          <img src={url} alt="" className="absolute inset-0 h-full w-full object-contain" onError={() => setMediaBroken(true)} />
+          <img src={url} alt="" className="w-full block" onError={() => setMediaBroken(true)} />
         )
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-zinc-700">
+        <div className="min-h-[200px] flex items-center justify-center text-zinc-700">
           <ImagePlus className="h-12 w-12" />
         </div>
       )}
@@ -195,11 +196,17 @@ function PostCard({ post, role, onLike, onComment, onBookmark, onCreatorClick, o
   const [saved, setSaved] = useState(false);
 
   async function handleLike() {
+    const wasLiked = liked;
+    setLiked(!wasLiked);
+    setLikeCount((c) => wasLiked ? c - 1 : c + 1);
     try {
       const res = await API(`/posts/${post.post_id}/like`, { method: "POST" });
       setLiked(res.liked);
       setLikeCount(res.like_count);
-    } catch {}
+    } catch {
+      setLiked(wasLiked);
+      setLikeCount((c) => wasLiked ? c + 1 : c - 1);
+    }
   }
 
   async function handleBookmark() {
@@ -416,25 +423,106 @@ function SubscribeModal({ creatorId, creatorName, onClose, onSuccess }) {
   );
 }
 
+// ─── Post Detail Modal ────────────────────────────────────────────────────────
+function PostDetailModal({ post, onClose }) {
+  const isVideo = post.media_type === "video" || post.media_type === "mixed";
+  const url = post.cover_url ? mediaUrl(post.cover_url) : null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        className="relative w-full max-w-lg rounded-2xl overflow-hidden bg-[#0f0f0f] border border-zinc-800 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close */}
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 z-20 rounded-full bg-black/60 p-1.5 text-white/70 hover:text-white hover:bg-black/80 transition"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        {/* Media */}
+        {url ? (
+          isVideo ? (
+            <video
+              src={url}
+              className="w-full block max-h-[65vh] object-contain bg-black"
+              controls
+              controlsList="nodownload"
+              autoPlay
+              muted
+              playsInline
+            />
+          ) : (
+            <img src={url} alt="" className="w-full block max-h-[65vh] object-contain bg-black" />
+          )
+        ) : (
+          <div className="w-full h-64 flex items-center justify-center bg-zinc-900 text-zinc-700">
+            <ImagePlus className="h-10 w-10" />
+          </div>
+        )}
+
+        {/* Info */}
+        {(post.caption || post.like_count > 0 || post.comment_count > 0) && (
+          <div className="px-4 py-4 space-y-2">
+            {post.caption && <p className="text-sm text-zinc-200 leading-relaxed">{post.caption}</p>}
+            <div className="flex items-center gap-4 text-xs text-zinc-500">
+              {post.like_count > 0 && (
+                <span className="flex items-center gap-1"><Heart className="h-3.5 w-3.5 text-rose-500" />{post.like_count.toLocaleString()}</span>
+              )}
+              {post.comment_count > 0 && (
+                <span className="flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" />{post.comment_count}</span>
+              )}
+              <span className="ml-auto text-zinc-600">{timeAgo(post.created_at)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Creator Profile Modal ────────────────────────────────────────────────────
 const TIER_CONFIG = {
-  FREE:      { label: "Free",      emoji: "🆓", color: "text-zinc-300",  border: "border-zinc-700",  bg: "bg-zinc-800/60",  upgrade: null },
-  EXCLUSIVE: { label: "Exclusive", emoji: "⭐", color: "text-sky-300",   border: "border-sky-500/40", bg: "bg-sky-500/10",  upgrade: "EXCLUSIVE" },
-  VIP:       { label: "VIP",       emoji: "💎", color: "text-amber-300", border: "border-amber-500/40", bg: "bg-amber-500/10", upgrade: "VIP" },
+  FREE:      { label: "Free",      Icon: Zap,   color: "text-zinc-300",  iconColor: "text-zinc-400",   border: "border-zinc-700",    bg: "bg-zinc-800/60",   upgrade: null },
+  EXCLUSIVE: { label: "Exclusive", Icon: Star,  color: "text-sky-300",   iconColor: "text-sky-400",    border: "border-sky-500/40",  bg: "bg-sky-500/10",    upgrade: "EXCLUSIVE" },
+  VIP:       { label: "VIP",       Icon: Crown, color: "text-amber-300", iconColor: "text-amber-400",  border: "border-amber-500/40", bg: "bg-amber-500/10", upgrade: "VIP" },
 };
 
-function PostThumb({ post, onSubscribeClick }) {
+function PostThumb({ post, onSubscribeClick, onPostClick }) {
   const isLocked = post.locked;
   const cfg = TIER_CONFIG[post.access_tier] || TIER_CONFIG.FREE;
 
   return (
-    <div className="relative aspect-square overflow-hidden rounded-2xl bg-zinc-900 group">
+    <div
+      className="relative aspect-square overflow-hidden rounded-2xl bg-zinc-900 group cursor-pointer"
+      onClick={() => isLocked ? onSubscribeClick?.() : onPostClick?.(post)}
+    >
       {post.cover_url ? (
-        <img
-          src={mediaUrl(post.cover_url)}
-          alt=""
-          className={`h-full w-full object-cover transition-transform group-hover:scale-105 ${isLocked ? "blur-sm brightness-50" : ""}`}
-        />
+        post.media_type === "video" || post.media_type === "mixed" ? (
+          <>
+            <video
+              src={mediaUrl(post.cover_url)}
+              className={`h-full w-full object-cover transition-transform group-hover:scale-105 ${isLocked ? "blur-sm brightness-50" : ""}`}
+              muted
+              preload="metadata"
+            />
+            {!isLocked && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="rounded-full bg-black/50 p-2">
+                  <Play className="h-4 w-4 text-white" fill="currentColor" />
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <img
+            src={mediaUrl(post.cover_url)}
+            alt=""
+            className={`h-full w-full object-cover transition-transform group-hover:scale-105 ${isLocked ? "blur-sm brightness-50" : ""}`}
+          />
+        )
       ) : (
         <div className="flex h-full items-center justify-center text-zinc-700">
           <ImagePlus className="h-8 w-8" />
@@ -473,6 +561,7 @@ function CreatorProfileModal({ creatorId, onClose, onSubscribe, onMessage }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("FREE");
+  const [viewPost, setViewPost] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -520,13 +609,13 @@ function CreatorProfileModal({ creatorId, onClose, onSubscribe, onMessage }) {
   let ctaText = null;
   let ctaNote = null;
   if (activeTab === "EXCLUSIVE" && (!plan || plan === "FREE")) {
-    ctaText = plan === "FREE" ? "⭐ Upgrade to Exclusive" : "⭐ Subscribe — Exclusive";
+    ctaText = plan === "FREE" ? "Upgrade to Exclusive" : "Subscribe — Exclusive";
     ctaNote = plan === "FREE"
       ? `${profile.exclusive_preview_remaining ?? 0} free preview${profile.exclusive_preview_remaining !== 1 ? "s" : ""} remaining this month`
       : `Subscribe to unlock all ${tabPosts.length} exclusive posts`;
   }
   if (activeTab === "VIP" && plan !== "VIP") {
-    ctaText = plan === "EXCLUSIVE" ? "💎 Upgrade to VIP" : plan === "FREE" ? "💎 Upgrade to VIP" : "💎 Subscribe — VIP";
+    ctaText = plan === "EXCLUSIVE" ? "Upgrade to VIP" : plan === "FREE" ? "Upgrade to VIP" : "Subscribe — VIP";
     ctaNote = plan === "EXCLUSIVE"
       ? `${profile.vip_preview_remaining ?? 0} VIP preview${profile.vip_preview_remaining !== 1 ? "s" : ""} remaining this month`
       : `VIP membership required for these ${tabPosts.length} posts`;
@@ -558,20 +647,21 @@ function CreatorProfileModal({ creatorId, onClose, onSubscribe, onMessage }) {
             </button>
           </div>
 
-          {/* Avatar + action row — avatar uses negative margin to overlap banner; relative+z-10 so it paints above the relative banner */}
-          <div className="relative z-10 px-5 -mt-8 flex items-end justify-between mb-3">
+          {/* Avatar + action row */}
+          <div className="relative z-10 px-5 -mt-8 flex items-end justify-between">
             <Avatar src={profile.profile_image_url} name={profile.display_name} size="h-16 w-16" textSize="text-xl" className="border-[3px] border-[#0f0f0f] shadow-lg" />
             {!profile.is_own_profile && (
-              <div className="flex items-center gap-2 pb-1">
+              <div className="flex items-center gap-2 mb-1">
                 {planCfg && (
-                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${TIER_STYLE[plan]}`}>
-                    {planCfg.emoji} {planCfg.label}
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${planCfg.border} ${planCfg.bg} ${planCfg.color}`}>
+                    <planCfg.Icon className={`h-3 w-3 ${planCfg.iconColor}`} />
+                    {planCfg.label}
                   </span>
                 )}
                 {onMessage && (
                   <button
                     onClick={() => onMessage(creatorId)}
-                    className="flex items-center gap-1.5 rounded-xl border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-zinc-800 transition"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 hover:border-zinc-500 transition shadow-sm"
                   >
                     <MessageCircle className="h-3.5 w-3.5" />
                     Message
@@ -579,19 +669,20 @@ function CreatorProfileModal({ creatorId, onClose, onSubscribe, onMessage }) {
                 )}
                 <button
                   onClick={handleSubscribe}
-                  className={`rounded-xl px-4 py-1.5 font-semibold text-xs transition ${
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition shadow-sm ${
                     plan === "VIP"
-                      ? "border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                      ? "border border-zinc-700 bg-zinc-900 text-zinc-400 hover:bg-zinc-800"
                       : plan === "EXCLUSIVE"
-                        ? "bg-amber-500 text-black hover:bg-amber-400"
-                        : "bg-sky-500 text-white hover:bg-sky-400"
+                        ? "bg-gradient-to-r from-amber-500 to-yellow-400 text-black hover:from-amber-400 hover:to-yellow-300 shadow-amber-500/20"
+                        : "bg-gradient-to-r from-sky-500 to-blue-500 text-white hover:from-sky-400 hover:to-blue-400 shadow-sky-500/20"
                   }`}
                 >
-                  {plan === "VIP" ? "✓ VIP" : plan === "EXCLUSIVE" ? "💎 Go VIP" : plan === "FREE" ? "⭐ Upgrade" : "Subscribe"}
+                  {plan === "VIP" ? <><Check className="h-3.5 w-3.5" /> VIP</> : plan === "EXCLUSIVE" ? <><Crown className="h-3.5 w-3.5" /> Go VIP</> : plan === "FREE" ? <><Star className="h-3.5 w-3.5" /> Upgrade</> : <><Zap className="h-3.5 w-3.5" /> Subscribe</>}
                 </button>
               </div>
             )}
           </div>
+          <div className="mb-3" />
 
           {/* Name / bio / stats */}
           <div className="px-5 pb-4">
@@ -614,21 +705,21 @@ function CreatorProfileModal({ creatorId, onClose, onSubscribe, onMessage }) {
             const count = byTier[tier]?.length || 0;
             const locked = tierLocked[tier];
             const isActive = activeTab === tier;
-            const activeUnderline = tier === "EXCLUSIVE" ? "border-sky-500" : tier === "VIP" ? "border-amber-500" : "border-zinc-500";
+            const activeUnderline = tier === "EXCLUSIVE" ? "border-sky-500" : tier === "VIP" ? "border-amber-500" : "border-zinc-400";
             return (
               <button
                 key={tier}
                 onClick={() => setActiveTab(tier)}
-                className={`relative flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium border-b-2 transition-colors ${
+                className={`relative flex items-center justify-center gap-1.5 py-3 text-xs font-semibold border-b-2 transition-colors ${
                   isActive ? `${cfg.color} ${activeUnderline}` : "text-zinc-600 border-transparent hover:text-zinc-400"
                 }`}
               >
-                <span>{cfg.emoji}</span>
+                <cfg.Icon className={`h-3.5 w-3.5 ${isActive ? cfg.iconColor : "text-zinc-700"}`} />
                 <span>{cfg.label}</span>
                 <span className={`text-[10px] rounded-full px-1.5 py-px ${isActive ? "bg-zinc-800 text-zinc-300" : "bg-zinc-900 text-zinc-600"}`}>
                   {count}
                 </span>
-                {locked && <Lock className="h-2.5 w-2.5 text-zinc-700 ml-0.5" />}
+                {locked && <Lock className="h-2.5 w-2.5 text-zinc-700" />}
               </button>
             );
           })}
@@ -641,17 +732,25 @@ function CreatorProfileModal({ creatorId, onClose, onSubscribe, onMessage }) {
             <div className={`mx-3 mt-3 rounded-xl px-3 py-2.5 flex items-center justify-between gap-3 ${
               activeTab === "VIP" ? "bg-amber-500/8 border border-amber-500/15" : "bg-sky-500/8 border border-sky-500/15"
             }`}>
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-white">{activeTab === "VIP" ? "💎 VIP Content" : "⭐ Exclusive Content"}</p>
-                <p className="text-[11px] text-zinc-500 truncate mt-0.5">{ctaNote}</p>
+              <div className="min-w-0 flex items-center gap-2">
+                {activeTab === "VIP"
+                  ? <Crown className="h-4 w-4 text-amber-400 flex-shrink-0" />
+                  : <Star className="h-4 w-4 text-sky-400 flex-shrink-0" />}
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-white">{activeTab === "VIP" ? "VIP Content" : "Exclusive Content"}</p>
+                  <p className="text-[11px] text-zinc-500 truncate mt-0.5">{ctaNote}</p>
+                </div>
               </div>
               <button
                 onClick={handleSubscribe}
-                className={`flex-shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
-                  activeTab === "VIP" ? "bg-amber-500 text-black hover:bg-amber-400" : "bg-sky-500 text-white hover:bg-sky-400"
+                className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
+                  activeTab === "VIP"
+                    ? "bg-gradient-to-r from-amber-500 to-yellow-400 text-black hover:from-amber-400 hover:to-yellow-300"
+                    : "bg-gradient-to-r from-sky-500 to-blue-500 text-white hover:from-sky-400 hover:to-blue-400"
                 }`}
               >
-                {ctaText}
+                {activeTab === "VIP" ? <Crown className="h-3 w-3" /> : <Star className="h-3 w-3" />}
+                {ctaText.replace(/^[^\s]+\s/, "")}
               </button>
             </div>
           )}
@@ -662,14 +761,15 @@ function CreatorProfileModal({ creatorId, onClose, onSubscribe, onMessage }) {
               <p className="text-xs">No {tabCfg.label.toLowerCase()} posts yet</p>
             </div>
           ) : (
-            <div className="grid grid-cols-4 gap-px p-3">
+            <div className="grid grid-cols-3 gap-2 p-3">
               {tabPosts.map((p) => (
-                <PostThumb key={p.post_id} post={p} onSubscribeClick={handleSubscribe} />
+                <PostThumb key={p.post_id} post={p} onSubscribeClick={handleSubscribe} onPostClick={setViewPost} />
               ))}
             </div>
           )}
         </div>
       </div>
+      {viewPost && <PostDetailModal post={viewPost} onClose={() => setViewPost(null)} />}
     </div>
   );
 }
@@ -3306,7 +3406,7 @@ function MainContent({ role, active, setActive, currentUser, onProfileUpdate, on
     setVisited((prev) => { if (prev.has(active)) return prev; const n = new Set(prev); n.add(active); return n; });
   }, [active]);
 
-  function openCreator(id) { setCreatorModal(id); if (onCreatorClick) onCreatorClick(id); }
+  function openCreator(id) { setCreatorModal(id); }
 
   function handleMessageCreator(creatorId) {
     setCreatorModal(null);
