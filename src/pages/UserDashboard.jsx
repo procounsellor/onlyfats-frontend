@@ -17,30 +17,51 @@ import {
 } from "../api/subscriptions";
 
 const API = (path, opts) => api(path, opts);
-const BASE = import.meta.env.VITE_API_BASE_URL?.replace("/api/v1", "") || "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://onlyfats-backend-177204163721.asia-south1.run.app/api/v1";
+const BASE = API_BASE_URL.replace("/api/v1", "");
 
 function mediaUrl(url) {
   if (!url) return null;
-  // Full URL — use directly
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  // Looks like a bare domain (e.g. "www.google.com") — bad seed data, ignore
   if (!url.startsWith("/") && !url.includes("/")) return null;
-  // Local /uploads/... path (legacy dev files)
   if (url.startsWith("/uploads/")) return `${BASE}${url}`;
-  // GCS object path — serve via backend proxy with token
-  const token = localStorage.getItem("access_token") || "";
-  return `${BASE}/api/v1/media/${url}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+  return `${BASE}/api/v1/media/${url}`;
+}
+
+// Reusable avatar — shows image if it loads, otherwise shows an initial-letter gradient circle
+function Avatar({ src, name, size = "h-10 w-10", textSize = "text-sm", className = "" }) {
+  const [broken, setBroken] = useState(false);
+  const resolved = src ? mediaUrl(src) : null;
+  useEffect(() => { setBroken(false); }, [src]);
+  const initial = (name || "?")[0].toUpperCase();
+  if (resolved && !broken) {
+    return (
+      <img
+        src={resolved}
+        alt={name || ""}
+        className={`${size} rounded-full object-cover flex-shrink-0 ${className}`}
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+  return (
+    <div className={`${size} rounded-full bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center font-bold text-white flex-shrink-0 ${textSize} ${className}`}>
+      {initial}
+    </div>
+  );
 }
 
 // ─── Media Carousel ───────────────────────────────────────────────────────────
-function MediaCarousel({ items, locked = false, height = "h-[420px]", onSubscribe, creatorId, creatorName }) {
+function MediaCarousel({ items, locked = false, aspectClass = "aspect-[4/5]", onSubscribe, creatorId, creatorName }) {
   const [idx, setIdx] = useState(0);
+  const [mediaBroken, setMediaBroken] = useState(false);
   const total = items?.length || 0;
 
   useEffect(() => { setIdx(0); }, [items]);
+  useEffect(() => { setMediaBroken(false); }, [idx, items]);
 
   if (!total) return (
-    <div className={`relative bg-zinc-900 flex items-center justify-center ${height}`}>
+    <div className={`relative bg-zinc-950 flex items-center justify-center ${aspectClass}`}>
       <ImagePlus className="h-16 w-16 text-zinc-700" />
     </div>
   );
@@ -53,24 +74,25 @@ function MediaCarousel({ items, locked = false, height = "h-[420px]", onSubscrib
   function next(e) { e.stopPropagation(); setIdx((i) => (i + 1) % total); }
 
   return (
-    <div className={`relative bg-zinc-900 overflow-hidden select-none ${height}`}>
+    <div className={`relative bg-zinc-950 overflow-hidden select-none ${aspectClass}`}>
       {/* Media */}
-      {url ? (
+      {url && !mediaBroken ? (
         isVideo ? (
           <video
             src={url}
-            className="h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-contain"
             controls
             autoPlay
             muted
             loop
             playsInline
+            onError={() => setMediaBroken(true)}
           />
         ) : (
-          <img src={url} alt="" className="h-full w-full object-cover" />
+          <img src={url} alt="" className="absolute inset-0 h-full w-full object-contain" onError={() => setMediaBroken(true)} />
         )
       ) : (
-        <div className="h-full w-full flex items-center justify-center text-zinc-700">
+        <div className="absolute inset-0 flex items-center justify-center text-zinc-700">
           <ImagePlus className="h-12 w-12" />
         </div>
       )}
@@ -220,13 +242,7 @@ function PostCard({ post, role, onLike, onComment, onBookmark, onCreatorClick, o
           className="flex items-center gap-3 text-left hover:opacity-80"
           onClick={() => onCreatorClick?.(post.creator_id)}
         >
-          {post.creator_avatar ? (
-            <img src={mediaUrl(post.creator_avatar)} alt={post.creator_display_name} className="h-11 w-11 rounded-full object-cover" />
-          ) : (
-            <div className="h-11 w-11 rounded-full bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-white font-bold">
-              {(post.creator_display_name || "?")[0]}
-            </div>
-          )}
+          <Avatar src={post.creator_avatar} name={post.creator_display_name} size="h-11 w-11" textSize="text-base" />
           <div>
             <div className="font-semibold text-white">{post.creator_display_name || "Creator"}</div>
             <div className="text-sm text-zinc-500">{post.creator_handle || ""} · {timeAgo(post.created_at)}</div>
@@ -247,7 +263,6 @@ function PostCard({ post, role, onLike, onComment, onBookmark, onCreatorClick, o
       <MediaCarousel
         items={post.media || []}
         locked={post.locked}
-        height="h-[420px]"
         onSubscribe={onSubscribe}
         creatorId={post.creator_id}
         creatorName={post.creator_display_name}
@@ -545,14 +560,7 @@ function CreatorProfileModal({ creatorId, onClose, onSubscribe, onMessage }) {
 
           {/* Avatar + action row — avatar uses negative margin to overlap banner; relative+z-10 so it paints above the relative banner */}
           <div className="relative z-10 px-5 -mt-8 flex items-end justify-between mb-3">
-            {profile.profile_image_url ? (
-              <img src={mediaUrl(profile.profile_image_url)} alt={profile.display_name}
-                className="h-16 w-16 rounded-full border-[3px] border-[#0f0f0f] object-cover shadow-lg flex-shrink-0" />
-            ) : (
-              <div className="h-16 w-16 rounded-full border-[3px] border-[#0f0f0f] bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-xl font-bold text-white shadow-lg flex-shrink-0">
-                {(profile.display_name || "?")[0]}
-              </div>
-            )}
+            <Avatar src={profile.profile_image_url} name={profile.display_name} size="h-16 w-16" textSize="text-xl" className="border-[3px] border-[#0f0f0f] shadow-lg" />
             {!profile.is_own_profile && (
               <div className="flex items-center gap-2 pb-1">
                 {planCfg && (
@@ -860,7 +868,7 @@ function PostEditorModal({ editPost, onClose, onSaved }) {
               <span className="text-sm text-zinc-400 font-medium">
                 {files.length > 0 ? `${files.length} file${files.length > 1 ? "s" : ""} selected` : "Tap to choose photos or videos"}
               </span>
-              <span className="text-xs text-zinc-600">JPEG, PNG, MP4, MOV supported</span>
+              <span className="text-xs text-zinc-600">All photo & video formats supported</span>
               <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={onFilesChange} />
             </label>
           </div>
@@ -870,7 +878,6 @@ function PostEditorModal({ editPost, onClose, onSaved }) {
             <div className="rounded-2xl overflow-hidden border border-zinc-800">
               <MediaCarousel
                 items={previews.map((p) => ({ url: p.url, media_kind: p.type.startsWith("video") ? "video" : "photo", type: p.type }))}
-                height="h-64"
               />
               {/* Thumbnail strip */}
               <div className="flex gap-1.5 p-2 bg-zinc-900 overflow-x-auto">
@@ -931,7 +938,7 @@ const STATUS_BADGE = {
   published: "border-emerald-600/40 bg-emerald-900/20 text-emerald-300",
 };
 
-function PostsPage() {
+function PostsPage({ onPostPublished }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editorPost, setEditorPost] = useState(undefined);
@@ -1107,7 +1114,7 @@ function PostsPage() {
         <PostEditorModal
           editPost={editorPost}
           onClose={() => setEditorPost(undefined)}
-          onSaved={() => { load(); if (editorPost === null) setEditorPost(undefined); }}
+          onSaved={() => { load(); onPostPublished?.(); if (editorPost === null) setEditorPost(undefined); }}
         />
       )}
 
@@ -1142,12 +1149,13 @@ function PostsPage() {
 }
 
 // ─── Feed ─────────────────────────────────────────────────────────────────────
-function Feed({ role, profileVersion, onMessage }) {
+function Feed({ role, profileVersion, feedVersion, isActive, onMessage }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [subscribeTarget, setSubscribeTarget] = useState(null); // {id, name}
   const [profileTarget, setProfileTarget] = useState(null);
   const [editorPost, setEditorPost] = useState(undefined);
+  const initialMount = useRef(true);
 
   const loadFeed = useCallback(() => {
     getFeed()
@@ -1162,6 +1170,13 @@ function Feed({ role, profileVersion, onMessage }) {
   useEffect(() => { loadFeed(); }, [loadFeed]);
   // Re-fetch when profile is updated so new avatar shows immediately
   useEffect(() => { if (profileVersion > 0) loadFeed(); }, [profileVersion]);
+  // Re-fetch when a new post is published from another tab
+  useEffect(() => { if (feedVersion > 0) loadFeed(); }, [feedVersion]);
+  // Re-fetch whenever the home tab becomes active (catches posts published from any tab)
+  useEffect(() => {
+    if (initialMount.current) { initialMount.current = false; return; }
+    if (isActive) loadFeed();
+  }, [isActive]);
 
   return (
     <>
@@ -1555,13 +1570,7 @@ function MessagesPage({ currentUser, pendingCreatorId, onPendingHandled }) {
                 }`}
               >
                 <div className="relative flex-shrink-0">
-                  {convAvatar(c) ? (
-                    <img src={mediaUrl(convAvatar(c))} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-black" />
-                  ) : (
-                    <div className={`h-10 w-10 rounded-full flex items-center justify-center text-sm font-bold ring-2 ring-black ${isActive ? "bg-sky-600 text-white" : "bg-zinc-700 text-zinc-300"}`}>
-                      {(convName(c) || "?")[0]}
-                    </div>
-                  )}
+                  <Avatar src={convAvatar(c)} name={convName(c)} size="h-10 w-10" className="ring-2 ring-black" />
                   {unread > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-sky-500 flex items-center justify-center text-[10px] font-bold text-white shadow-lg shadow-sky-500/40 animate-pulse">
                       {unread > 9 ? "9+" : unread}
@@ -1592,13 +1601,7 @@ function MessagesPage({ currentUser, pendingCreatorId, onPendingHandled }) {
               <ChevronRight className="h-5 w-5 rotate-180" />
             </button>
             <div className="relative">
-              {convAvatar(selected) ? (
-                <img src={mediaUrl(convAvatar(selected))} alt="" className="h-9 w-9 rounded-full object-cover ring-2 ring-sky-500/30" />
-              ) : (
-                <div className="h-9 w-9 rounded-full bg-sky-600 flex items-center justify-center text-white font-bold text-sm ring-2 ring-sky-500/30">
-                  {(convName(selected) || "?")[0]}
-                </div>
-              )}
+              <Avatar src={convAvatar(selected)} name={convName(selected)} size="h-9 w-9" className="ring-2 ring-sky-500/30" />
               <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-zinc-900 shadow-lg shadow-emerald-500/50" />
             </div>
             <div>
@@ -1628,13 +1631,7 @@ function MessagesPage({ currentUser, pendingCreatorId, onPendingHandled }) {
               return (
                 <div key={m.id} className={`flex items-end gap-2 ${isMine ? "justify-end" : "justify-start"} ${isGrouped ? "mt-0.5" : "mt-3"}`}>
                   {!isMine && !isGrouped && (
-                    convAvatar(selected) ? (
-                      <img src={mediaUrl(convAvatar(selected))} alt="" className="h-6 w-6 rounded-full object-cover flex-shrink-0 mb-0.5" />
-                    ) : (
-                      <div className="h-6 w-6 rounded-full bg-zinc-700 flex-shrink-0 flex items-center justify-center text-xs font-bold text-zinc-300 mb-0.5">
-                        {(convName(selected) || "?")[0]}
-                      </div>
-                    )
+                    <Avatar src={convAvatar(selected)} name={convName(selected)} size="h-6 w-6" textSize="text-xs" className="mb-0.5" />
                   )}
                   {!isMine && isGrouped && <div className="w-6 flex-shrink-0" />}
                   <div
@@ -1725,13 +1722,7 @@ function MessagesPage({ currentUser, pendingCreatorId, onPendingHandled }) {
                     disabled={starting}
                     className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-zinc-800 transition text-left disabled:opacity-50"
                   >
-                    {c.profile_image_url ? (
-                      <img src={mediaUrl(c.profile_image_url)} alt="" className="h-9 w-9 rounded-full object-cover flex-shrink-0" />
-                    ) : (
-                      <div className="h-9 w-9 flex-shrink-0 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-300 font-bold text-sm">
-                        {(c.display_name || "?")[0]}
-                      </div>
-                    )}
+                    <Avatar src={c.profile_image_url} name={c.display_name} size="h-9 w-9" />
                     <div className="min-w-0">
                       <div className="font-medium text-white text-sm truncate">{c.display_name}</div>
                       {c.bio && <div className="text-xs text-zinc-500 truncate">{c.bio}</div>}
@@ -1980,7 +1971,7 @@ function SubscriptionsPage({ role, onCreatorClick, onSubscribe, setActive }) {
           <p className="text-zinc-400 font-medium">No active subscriptions</p>
           <p className="text-sm text-zinc-600 mt-1">Discover creators and subscribe to unlock content</p>
           <button
-            onClick={() => onCreatorClick?.("discover")}
+            onClick={() => setActive?.("discover")}
             className="mt-4 rounded-2xl bg-sky-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-400"
           >
             Browse Creators
@@ -2037,18 +2028,8 @@ function SubscriptionsPage({ role, onCreatorClick, onSubscribe, setActive }) {
               <div className="px-5 pb-5">
                 {/* Avatar + name row — relative z-10 so it paints above the relative banner */}
                 <div className="relative z-10 flex items-end gap-4 -mt-8 mb-4">
-                  {s.creator_profile_image_url ? (
-                    <img src={mediaUrl(s.creator_profile_image_url)} alt={s.creator_display_name}
-                      className={`h-16 w-16 rounded-full border-[3px] border-zinc-950 object-cover flex-shrink-0 shadow-lg ring-2 ring-offset-2 ring-offset-zinc-950 ${
-                        s.plan_code === "FREE" ? "ring-emerald-700/50" : s.plan_code === "EXCLUSIVE" ? "ring-sky-700/50" : "ring-purple-700/50"
-                      }`} />
-                  ) : (
-                    <div className={`h-16 w-16 rounded-full border-[3px] border-zinc-950 bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-xl font-bold text-white flex-shrink-0 shadow-lg ring-2 ring-offset-2 ring-offset-zinc-950 ${
-                      s.plan_code === "FREE" ? "ring-emerald-700/50" : s.plan_code === "EXCLUSIVE" ? "ring-sky-700/50" : "ring-purple-700/50"
-                    }`}>
-                      {(s.creator_display_name || "?")[0]}
-                    </div>
-                  )}
+                  <Avatar src={s.creator_profile_image_url} name={s.creator_display_name} size="h-16 w-16" textSize="text-xl"
+                    className={`border-[3px] border-zinc-950 shadow-lg ring-2 ring-offset-2 ring-offset-zinc-950 ${s.plan_code === "FREE" ? "ring-emerald-700/50" : s.plan_code === "EXCLUSIVE" ? "ring-sky-700/50" : "ring-purple-700/50"}`} />
                   <div className="flex-1 min-w-0 pb-1">
                     <h3 className="font-bold text-white text-base truncate">{s.creator_display_name}</h3>
                     <div className="flex gap-3 text-xs text-zinc-500 mt-0.5">
@@ -2358,13 +2339,7 @@ function DiscoverPage({ onCreatorClick }) {
             onClick={() => onCreatorClick?.(c.id)}
             className="flex items-center gap-4 rounded-2xl border border-zinc-900 bg-zinc-950 p-4 text-left hover:border-zinc-700 hover:bg-zinc-900 transition"
           >
-            {c.profile_image_url ? (
-              <img src={mediaUrl(c.profile_image_url)} alt={c.display_name} className="h-14 w-14 rounded-full object-cover flex-shrink-0" />
-            ) : (
-              <div className="h-14 w-14 flex-shrink-0 rounded-full bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-xl font-bold text-white">
-                {(c.display_name || "?")[0]}
-              </div>
-            )}
+            <Avatar src={c.profile_image_url} name={c.display_name} size="h-14 w-14" textSize="text-xl" />
             <div className="min-w-0">
               <div className="font-semibold text-white truncate">{c.display_name}</div>
               <div className="text-sm text-zinc-500 truncate">{c.bio || "Creator"}</div>
@@ -2901,14 +2876,7 @@ function ProfilePanel({ currentUser, role, setActive }) {
         </div>
         {/* Avatar — lives outside the overflow-hidden banner */}
         <div className="absolute -bottom-10 left-6 z-10">
-          {avatarImg ? (
-            <img src={mediaUrl(avatarImg)} alt={currentUser?.display_name}
-              className="h-20 w-20 rounded-full border-4 border-zinc-950 object-cover shadow-xl" />
-          ) : (
-            <div className="h-20 w-20 rounded-full border-4 border-zinc-950 bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-2xl font-bold text-white shadow-xl">
-              {(currentUser?.display_name || "?")[0]}
-            </div>
-          )}
+          <Avatar src={avatarImg} name={currentUser?.display_name} size="h-20 w-20" textSize="text-2xl" className="border-4 border-zinc-950 shadow-xl" />
         </div>
       </div>
 
@@ -3068,14 +3036,7 @@ function ProfilePanel({ currentUser, role, setActive }) {
                   const tierCfg = TIER_CONFIG[s.plan_code] || TIER_CONFIG.FREE;
                   return (
                     <div key={s.subscription_id} className="flex items-center gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3">
-                      {s.creator_profile_image_url ? (
-                        <img src={mediaUrl(s.creator_profile_image_url)} alt=""
-                          className="h-11 w-11 rounded-full object-cover flex-shrink-0" />
-                      ) : (
-                        <div className="h-11 w-11 rounded-full bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
-                          {(s.creator_display_name || "?")[0]}
-                        </div>
-                      )}
+                      <Avatar src={s.creator_profile_image_url} name={s.creator_display_name} size="h-11 w-11" />
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-white text-sm truncate">{s.creator_display_name}</div>
                         <div className="text-xs text-zinc-500 mt-0.5">
@@ -3160,13 +3121,7 @@ function RightRail({ role, onCreatorClick, profileVersion }) {
                 onClick={() => onCreatorClick?.(c.id)}
                 className="flex w-full items-center gap-3 text-left hover:opacity-80 transition"
               >
-                {c.profile_image_url ? (
-                  <img src={mediaUrl(c.profile_image_url)} alt={c.display_name} className="h-10 w-10 rounded-full object-cover flex-shrink-0" />
-                ) : (
-                  <div className="h-10 w-10 flex-shrink-0 rounded-full bg-gradient-to-br from-sky-500 to-sky-700 flex items-center justify-center font-bold text-white text-sm">
-                    {(c.display_name || "?")[0]}
-                  </div>
-                )}
+                <Avatar src={c.profile_image_url} name={c.display_name} size="h-10 w-10" />
                 <div className="min-w-0 flex-1">
                   <div className="font-medium text-white truncate">{c.display_name}</div>
                   <div className="text-xs text-zinc-500">{c.subscriber_count} subscribers · {c.post_count} posts</div>
@@ -3244,14 +3199,7 @@ function TopBar({ role, setMobileOpen, currentUser, onLogout, setActive, unreadC
           </button>
           <div className="relative">
             <button onClick={() => setDropOpen((v) => !v)} className="flex items-center gap-2 rounded-2xl border border-zinc-800 px-3 py-2 text-sm hover:bg-zinc-900">
-              {currentUser?.profile_image_url ? (
-                <img src={mediaUrl(currentUser.profile_image_url)} alt={currentUser.display_name}
-                  className="h-7 w-7 rounded-full object-cover" />
-              ) : (
-                <div className="h-7 w-7 rounded-full bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-xs font-bold text-white">
-                  {(currentUser?.display_name || "U")[0]}
-                </div>
-              )}
+              <Avatar src={currentUser?.profile_image_url} name={currentUser?.display_name || "U"} size="h-7 w-7" textSize="text-xs" />
               <span className="hidden sm:block text-zinc-200">{currentUser?.display_name || "User"}</span>
             </button>
             {dropOpen && (
@@ -3351,6 +3299,7 @@ function LeftSidebar({ role, active, setActive, mobileOpen, setMobileOpen, onLog
 function MainContent({ role, active, setActive, currentUser, onProfileUpdate, onCreatorClick, profileVersion, pendingCreatorId, onPendingHandled, onMessageCreator }) {
   const [creatorModal, setCreatorModal] = useState(null);
   const [subscribeModal, setSubscribeModal] = useState(null);
+  const [feedVersion, setFeedVersion] = useState(0);
   // Track visited tabs so we keep them mounted (preserving state/data) once loaded
   const [visited, setVisited] = useState(() => new Set(["home"]));
   useEffect(() => {
@@ -3368,10 +3317,10 @@ function MainContent({ role, active, setActive, currentUser, onProfileUpdate, on
     <>
       <main className="min-w-0 flex-1 px-4 py-6 lg:px-8">
         <div className={`max-w-xl mx-auto xl:mx-0 xl:max-w-2xl${active !== "home" ? " hidden" : ""}`}>
-          <Feed role={role} profileVersion={profileVersion} onMessage={role !== "creator" ? handleMessageCreator : undefined} />
+          <Feed role={role} profileVersion={profileVersion} feedVersion={feedVersion} isActive={active === "home"} onMessage={role !== "creator" ? handleMessageCreator : undefined} />
         </div>
         {visited.has("discover") && <div className={active !== "discover" ? "hidden" : ""}><DiscoverPage onCreatorClick={openCreator} /></div>}
-        {role === "creator" && visited.has("posts") && <div className={active !== "posts" ? "hidden" : ""}><PostsPage /></div>}
+        {role === "creator" && visited.has("posts") && <div className={active !== "posts" ? "hidden" : ""}><PostsPage onPostPublished={() => setFeedVersion((v) => v + 1)} /></div>}
         {visited.has("notifications") && <div className={active !== "notifications" ? "hidden" : ""}><NotificationsPage /></div>}
         {visited.has("messages") && <div className={active !== "messages" ? "hidden" : ""}><MessagesPage currentUser={currentUser} pendingCreatorId={active === "messages" ? pendingCreatorId : null} onPendingHandled={onPendingHandled} /></div>}
         {visited.has("collections") && <div className={active !== "collections" ? "hidden" : ""}><CollectionsPage /></div>}

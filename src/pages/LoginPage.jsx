@@ -36,7 +36,7 @@ export default function LoginPage({ mode, setMode, onLogin, onSignup, onGuest })
         });
       } else if (mode === "guest") {
         await onGuest({
-          guest_name: form.guest_name,
+          display_name: form.guest_name,
         });
       } else {
         await onLogin({
@@ -64,7 +64,7 @@ export default function LoginPage({ mode, setMode, onLogin, onSignup, onGuest })
             <div className="mt-8">
               <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
               <p className="mt-2 text-sm text-zinc-400">
-                Premium dark creator UI connected to your FastAPI auth APIs.
+                {mode === "signup" ? "Join as a creator or fan." : mode === "guest" ? "No account needed — explore freely." : "Sign in to your account."}
               </p>
             </div>
 
